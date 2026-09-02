@@ -22,6 +22,8 @@ dma_command_t cmd;
 int sio2_event_flag;
 
 static int sd_detect_thread_id = -1;
+/* serializes the driver's own SIO2 use: reads, writes and the detect probe */
+static int mx_sio2_mutex = -1;
 static sio2_transfer_data_t global_td;
 static uint8_t sio2_current_baud = SIO2_BAUD_DIV_SLOW;
 static uint32_t sio2_save_crtl;
@@ -168,6 +170,8 @@ void mx_sio2_lock(uint8_t intr_type)
 {
     int state;
 
+    WaitSema(mx_sio2_mutex);
+
     /* lock sio2man driver so we can use it exclusively */
     sio2man_hook_sio2_lock();
 
@@ -214,6 +218,8 @@ void mx_sio2_unlock(uint8_t intr_type)
 
     /* unlock sio2man driver */
     sio2man_hook_sio2_unlock();
+
+    SignalSema(mx_sio2_mutex);
 }
 
 void mx_sio2_set_baud(uint8_t baud)
@@ -725,6 +731,7 @@ const uint8_t reverse_byte_LUT8[256] = {
 static int module_start(int argc, char *argv[], void *startaddr, ModuleInfo_t *mi)
 {
     iop_event_t event;
+    iop_sema_t sema;
     iop_thread_t thread;
     int rv;
 
@@ -751,6 +758,17 @@ static int module_start(int argc, char *argv[], void *startaddr, ModuleInfo_t *m
     if (sio2_event_flag < 0) {
         M_PRINTF("ERROR: CreateEventFlag returned %d\n", sio2_event_flag);
         goto error1;
+    }
+
+    /* create mutex */
+    sema.attr    = 0;
+    sema.option  = 0;
+    sema.initial = 1;
+    sema.max     = 1;
+    mx_sio2_mutex = CreateSema(&sema);
+    if (mx_sio2_mutex < 0) {
+        M_PRINTF("ERROR: CreateSema returned %d\n", mx_sio2_mutex);
+        goto error2;
     }
 
     rv = sio2man_hook_init();
@@ -803,6 +821,7 @@ error4:
 error3:
     sio2man_hook_deinit();
 error2:
+    DeleteSema(mx_sio2_mutex);
     DeleteEventFlag(sio2_event_flag);
 error1:
     return MODULE_NO_RESIDENT_END;
@@ -825,6 +844,7 @@ static int module_stop(int argc, char *argv[], void *startaddr, ModuleInfo_t *mi
 
     DeleteThread(sd_detect_thread_id);
     sio2man_hook_deinit();
+    DeleteSema(mx_sio2_mutex);
     DeleteEventFlag(sio2_event_flag);
 
     return MODULE_NO_RESIDENT_END;
