@@ -86,17 +86,27 @@ static void unhook_loadcore(void);
 static void unhook_intrman(void);
 #endif
 
+static int _sio2man_version_supported(unsigned int version)
+{
+    unsigned int major = (version >> 8) & 0xFF;
+    unsigned int minor = version & 0xFF;
+
+    if (major == 1)
+        return minor >= 2;
+    return major == 2;
+}
+
 static void _sio2man_hook(iop_library_t *lib)
 {
     int state;
 
     // Disable interrupts to prevent race conditions with MC/PAD libraries
     CpuSuspendIntr(&state);
-    // Only the newest sio2man libraries (using one semaphore for locks for all devices) are supported
-    switch (lib->version)
+    // XSIO2MAN 1.2+ and every 2.x: export slots 23, 25 and 26 are the same
+    // across them. 1.1 (rom0 SIO2MAN) predates them.
+    switch (_sio2man_version_supported(lib->version))
     {
-        case IRX_VER(1, 2):
-        case IRX_VER(2, 7):
+        case 1:
         {
             int major_version;
 
