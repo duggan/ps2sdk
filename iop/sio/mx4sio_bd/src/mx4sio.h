@@ -52,6 +52,7 @@ typedef struct dma_command_t
 /* globals */
 extern dma_command_t cmd;
 extern int sio2_event_flag;
+extern int mx_sio2_mutex;
 extern const uint8_t reverse_byte_LUT8[256];
 
 /* MX SIO2 functions */

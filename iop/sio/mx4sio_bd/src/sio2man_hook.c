@@ -19,6 +19,7 @@
 #include "ioplib.h"
 #include "sio2man.h"
 #include "sio2man_hook.h"
+#include "mx4sio.h"
 
 // #define DEBUG  //comment out this line when not debugging
 #include "module_debug.h"
@@ -58,8 +59,12 @@ static sio2_transfer_data_t g_null_td;
 static int _sio2_transfer(psio2_transfer transfer_func, sio2_transfer_data_t *td)
 {
     unsigned int i;
+    int rv;
 
     //M_DEBUG("%s\n", __FUNCTION__);
+
+    // Serialize against the driver's own transfers (see mx_sio2_mutex)
+    WaitSema(mx_sio2_mutex);
 
     // Do not allow transfers to/from our used port
     for (i = 0; i < (sizeof(td->regdata)/sizeof(td->regdata[0])); i++) {
@@ -69,11 +74,15 @@ static int _sio2_transfer(psio2_transfer transfer_func, sio2_transfer_data_t *td
 
         // Wrong port; behave as a no-op.
         // This will allow the transfer reset behavior for old library to work.
-        if ((td->regdata[i] & 3) == PORT_NR)
-            return transfer_func(&g_null_td);
+        if ((td->regdata[i] & 3) == PORT_NR) {
+            td = &g_null_td;
+            break;
+        }
     }
 
-    return transfer_func(td);
+    rv = transfer_func(td);
+    SignalSema(mx_sio2_mutex);
+    return rv;
 }
 
 // Hooked sio2man functions
@@ -294,20 +303,6 @@ void sio2man_hook_deinit()
 #if SIO2MAN_HOOK_SUPPORT_SET_INTR_HANDLER
     unhook_intrman();
 #endif
-}
-
-void sio2man_hook_sio2_lock()
-{
-    // Lock sio2man driver so we can use it exclusively
-    if (g_hook_data[1].m_23_psio2_pad_transfer_init)
-        g_hook_data[1].m_23_psio2_pad_transfer_init();
-}
-
-void sio2man_hook_sio2_unlock()
-{
-    // Unlock sio2man driver
-    if (g_hook_data[1].m_26_psio2_transfer_reset)
-        g_hook_data[1].m_26_psio2_transfer_reset();
 }
 
 #if SIO2MAN_HOOK_SUPPORT_SET_INTR_HANDLER

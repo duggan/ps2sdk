@@ -22,8 +22,9 @@ dma_command_t cmd;
 int sio2_event_flag;
 
 static int sd_detect_thread_id = -1;
-/* serializes the driver's own SIO2 use: reads, writes and the detect probe */
-static int mx_sio2_mutex = -1;
+/* the single lock for the SIO2: the driver's reads, writes and detect probe,
+   and every hooked sio2man transfer (sio2man_hook.c) */
+int mx_sio2_mutex = -1;
 static sio2_transfer_data_t global_td;
 static uint8_t sio2_current_baud = SIO2_BAUD_DIV_SLOW;
 static uint32_t sio2_save_crtl;
@@ -172,9 +173,6 @@ void mx_sio2_lock(uint8_t intr_type)
 
     WaitSema(mx_sio2_mutex);
 
-    /* lock sio2man driver so we can use it exclusively */
-    sio2man_hook_sio2_lock();
-
     /* save ctrl state */
     sio2_save_crtl = inl_sio2_ctrl_get();
 
@@ -215,9 +213,6 @@ void mx_sio2_unlock(uint8_t intr_type)
 
     /* restore ctrl state, and reset STATE + FIFOS */
     inl_sio2_ctrl_set(sio2_save_crtl | 0xc);
-
-    /* unlock sio2man driver */
-    sio2man_hook_sio2_unlock();
 
     SignalSema(mx_sio2_mutex);
 }
