@@ -576,6 +576,17 @@ void mx_sio2_start_rx_dma(uint8_t *buffer)
     inl_sio2_ctrl_set(inl_sio2_ctrl_get() | 1);
 }
 
+/* Stop a SIO2 DMA channel (CHCR = 0) when its transfer is abandoned */
+void mx_sio2_stop_rx_dma(void)
+{
+    _sw(0, 0xBF801558); /* DMAC channel 12 (SIO2out) CHCR */
+}
+
+void mx_sio2_stop_tx_dma(void)
+{
+    _sw(0, 0xBF801548); /* DMAC channel 11 (SIO2in) CHCR */
+}
+
 void mx_sio2_start_tx_dma(uint8_t *buffer)
 {
     /* DMA: 256 bytes */

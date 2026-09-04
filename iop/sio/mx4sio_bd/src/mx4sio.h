@@ -68,6 +68,8 @@ extern void mx_sio2_tx_pio(uint8_t *buffer, uint32_t size);
 
 extern void mx_sio2_start_rx_dma(uint8_t *buffer); /* DMA used for all other transfers */
 extern void mx_sio2_start_tx_dma(uint8_t *buffer);
+extern void mx_sio2_stop_rx_dma(void);
+extern void mx_sio2_stop_tx_dma(void);
 
 extern uint8_t mx_sio2_wait_equal(uint8_t value, uint32_t count);
 extern uint8_t mx_sio2_wait_not_equal(uint8_t value, uint32_t count);

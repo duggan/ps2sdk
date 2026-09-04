@@ -45,6 +45,42 @@
 #define CMD_CRC_OFFSET        5
 #define CRC7_SHIFT_MASK(crc7) ((crc7) << 1U | 1U)
 
+/* WaitEventFlag bounded by an alarm: a sio2man initialising in the same IOP
+   resets the SIO2, and a DMA transfer in flight at that moment never completes
+   (channel busy, SIO2 idle). Single waiter: transfers hold the mutex. */
+#define EF_MX_WAIT_TIMEOUT     0x80000000
+#define MX_DMA_WAIT_TIMEOUT_US (1000 * 1000)
+
+static int g_mx_wait_ef;
+
+static unsigned int mx_wait_timeout_alarm(void *common)
+{
+    (void)common;
+    iSetEventFlag(g_mx_wait_ef, EF_MX_WAIT_TIMEOUT);
+    return 0;
+}
+
+static int mx_wait_event_flag_bounded(int ef, uint32_t bits, uint32_t *resbits)
+{
+    iop_sys_clock_t clk;
+    u32 res = 0;
+    int ret;
+
+    g_mx_wait_ef = ef;
+    USec2SysClock(MX_DMA_WAIT_TIMEOUT_US, &clk);
+    SetAlarm(&clk, &mx_wait_timeout_alarm, NULL);
+    ret = WaitEventFlag(ef, bits | EF_MX_WAIT_TIMEOUT, WEF_OR, &res);
+    CancelAlarm(&mx_wait_timeout_alarm, NULL);
+    *resbits = res;
+    if (ret != 0)
+        return 0;
+    if (res & EF_MX_WAIT_TIMEOUT) {
+        ClearEventFlag(ef, ~EF_MX_WAIT_TIMEOUT);
+        return 0;
+    }
+    return 1;
+}
+
 /* globals */
 spisd_t sdcard;
 
@@ -446,7 +482,12 @@ static int spisd_read_multi_do(void *buffer, uint16_t count)
     while (1) {
         uint32_t resbits;
 
-        WaitEventFlag(sio2_event_flag, EF_SIO2_INTR_REVERSE | EF_SIO2_INTR_COMPLETE, 1, &resbits);
+        if (!mx_wait_event_flag_bounded(sio2_event_flag, EF_SIO2_INTR_REVERSE | EF_SIO2_INTR_COMPLETE, &resbits)) {
+            /* no completion: stop the still-armed channel and report the failure */
+            mx_sio2_stop_rx_dma();
+            cmd.response = SPISD_RESULT_TIMEOUT;
+            break;
+        }
 
         if (resbits & EF_SIO2_INTR_REVERSE) {
             ClearEventFlag(sio2_event_flag, ~EF_SIO2_INTR_REVERSE);
@@ -539,7 +580,10 @@ static int spisd_write_multi_do(void* buffer, uint16_t count)
     mx_sio2_start_tx_dma(buffer);
 
     /* wait for transfer to complete */
-    WaitEventFlag(sio2_event_flag, EF_SIO2_INTR_COMPLETE, 1, &resbits);
+    if (!mx_wait_event_flag_bounded(sio2_event_flag, EF_SIO2_INTR_COMPLETE, &resbits)) {
+        mx_sio2_stop_tx_dma();
+        cmd.response = SPISD_RESULT_TIMEOUT;
+    }
 
     if (resbits & EF_SIO2_INTR_COMPLETE) {
         ClearEventFlag(sio2_event_flag, ~EF_SIO2_INTR_COMPLETE);
@@ -607,10 +651,11 @@ int spisd_read(struct block_device *bd, uint64_t sector, void *buffer, uint16_t 
 
         /* fail condition */
         if (sectors_left > 0) {
+            sector += results;
             buffer = (uint8_t *)buffer + (results * 512);
             M_DEBUG("ERROR: failed to read all sectors, read:%i, abort:%i\n", sectors_left, cmd.abort);
 
-            if (cmd.abort == CMD_ABORT_NO_READ_TOKEN) {
+            if (cmd.abort == CMD_ABORT_NO_READ_TOKEN || cmd.response != SPISD_RESULT_OK) {
                 /* this can only be resolved by resetting the card */
                 if (spisd_recover() != SPISD_RESULT_OK) {
                     /* if recovery fails, do not try to continue  */

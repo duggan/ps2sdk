@@ -38,6 +38,9 @@ I_CreateThread
 I_StartThread
 I_DeleteThread
 I_DelayThread
+I_SetAlarm
+I_CancelAlarm
+I_USec2SysClock
 thbase_IMPORTS_end
 
 thevent_IMPORTS_start
