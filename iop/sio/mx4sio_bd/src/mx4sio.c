@@ -54,7 +54,7 @@ int mx_sio2_dma_isr_rx(void *arg)
     /* NOTE: Some cards respond with 0xFE immediately after the CRC16, others do not.
      * Try to get 0xFE regardless of whether the transfers complete as it's
      * needed for correct alignment of CMD12 (STOP_TRANSMISSION) later */
-    if (inl_sio2_data_in() != 0xFE) {
+    if (reverse_byte_LUT8[inl_sio2_data_in()] != 0xFE) {
         cmd.response = mx_sio2_wait_equal(0xFE, READ_TOKEN_TIMEOUT);
     } else {
         cmd.response = SPISD_RESULT_OK;
