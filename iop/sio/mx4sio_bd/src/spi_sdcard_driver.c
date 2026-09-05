@@ -726,6 +726,9 @@ int spisd_write(struct block_device *bd, uint64_t sector, const void *buffer, ui
         retries++;
     }
 
+    /* restore the caller's buffer */
+    reverse_buffer((void *)buffer, ((count * SECTOR_SIZE) / 4));
+
     sdcard.used = 1;
 
     mx_sio2_unlock(INTR_TX);
