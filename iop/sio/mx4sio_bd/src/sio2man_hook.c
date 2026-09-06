@@ -109,6 +109,11 @@ static void _sio2man_hook(iop_library_t *lib)
 {
     int state;
 
+    // A library re-registered after ReleaseLibraryEntries (mcemu does this
+    // to install its own hooks on top of ours) is already hooked.
+    if (_sio2man_version_supported(lib->version) && g_hook_data[((lib->version >> 8) & 0xFF) - 1].m_lib == lib)
+        return;
+
     // Disable interrupts to prevent race conditions with MC/PAD libraries
     CpuSuspendIntr(&state);
     // XSIO2MAN 1.2+ and every 2.x: export slots 23, 25 and 26 are the same
